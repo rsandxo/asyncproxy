@@ -46,9 +46,9 @@ async def run_server(local_host, local_port, remote_host, remote_port):
 
 async def main():
     if len(sys.argv[1:]) != 4:
-        print("Usage: ./aproxy.py [local_host] [local_port]", end='')
+        print("Usage: ./asyncproxy.py [local_host] [local_port]", end='')
         print("[remote_host] [remote_port]")
-        print("Example: ./aproxy.py 127.0.0.1 9000 10.12.132.1 9000")
+        print("Example: ./asyncproxy.py 127.0.0.1 9999 10.12.132.1 8888")
         sys.exit(0)
 
     local_host = sys.argv[1]
