@@ -3,11 +3,34 @@ import asyncio
 import sys
 
 
-async def pipe(reader, writer):
+async def l2rsplice(reader, writer):
     try:
-        while not reader.at_eof():
-            writer.write(await reader.read(16384))
+        while True:
+            data = await reader.read(8192)
+            if not data:
+                break
+            writer.write(data)
             await writer.drain()
+    except asyncio.TimeoutError:
+        print("[!] Timeout error in l2r coroutine")
+    except ConnectionResetError:
+        print("[!] Connection reset error in l2r coroutine")
+    finally:
+        writer.close()
+        await writer.wait_closed()
+
+async def r2lsplice(reader, writer):
+    try:
+        while True:
+            data = await reader.read(8192)
+            if not data:
+                break
+            writer.write(data)
+            await writer.drain()
+    except asyncio.TimeoutError:
+        print("[!] Timeout error in r2l coroutine")
+    except ConnectionResetError:
+        print("[!] Connection reset error in r2l coroutine")
     finally:
         writer.close()
         await writer.wait_closed()
@@ -16,31 +39,37 @@ async def pipe(reader, writer):
 async def handle_client(local_reader, local_writer, remote_host, remote_port):
     try:
         remote_reader, remote_writer = await asyncio.open_connection(remote_host, remote_port)
-        print(f'[*] Client connected.')
-        l2r = pipe(local_reader, remote_writer)
-        r2l = pipe(remote_reader, local_writer)
-        await asyncio.gather(l2r, r2l)
-    except ConnectionResetError as e:
-        print(f'[!] Error: {e}')
-    except ConnectionRefusedError as e:
-        print(f'[!] Error: {e}')
+        client_socket_info = local_writer.get_extra_info('socket')
+        print(f'[INFO] Client connected. {client_socket_info}')
+
+        tasks = [
+        asyncio.create_task(l2rsplice(local_reader, remote_writer)),
+        asyncio.create_task(r2lsplice(remote_reader, local_writer))
+    ]
+        await asyncio.gather(*tasks)
+
+    except ConnectionError as e:
+        print(f'[!] Error {e}')
+    except Exception as e:
+        print(f'[!] {e}')
     finally:
         print('[*] Closing socket connection.')
         local_writer.close()
         await local_writer.wait_closed()
 
 
+
 async def run_server(local_host, local_port, remote_host, remote_port):
     server = await asyncio.start_server(
         lambda r, w: handle_client(r, w, remote_host, remote_port), local_host, local_port)
     addr = server.sockets[0].getsockname()
-    print(server)
+    print(f'[INFO] {server}')
     print(f'[*] Listening for connections on {addr}')
     try:
         async with server:
             await server.serve_forever()
     finally:
-        print(f'[!] Shutting down... serving={server.is_serving()}')
+        print(f'[*] Shutting down... listening: {server.is_serving()}')
         await asyncio.sleep(2)
 
 
@@ -55,17 +84,17 @@ async def main():
     local_port = int(sys.argv[2])
     remote_host = sys.argv[3]
     remote_port = int(sys.argv[4])
+
     server_task = asyncio.create_task(run_server(local_host, local_port, remote_host, remote_port))
     try:
         await server_task
-    except asyncio.CancelledError:
-        if not asyncio.current_task().cancelling():
-            raise
-        else:
-            return
-    else:
-        raise RuntimeError("[!] Task did not exit cleanly! This isn't normal behaviour.")
-
+    except RuntimeError as e:
+        print(f'[!] Server did not exit cleanly!')
+    except Exception as e:
+        print(f'[!] {e}')
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt as e:
+        print(f'[!] KeyboardInterrupt')
