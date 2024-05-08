@@ -39,7 +39,7 @@ async def r2lsplice(reader, writer):
 async def handle_client(local_reader, local_writer, remote_host, remote_port):
     try:
         remote_reader, remote_writer = await asyncio.open_connection(remote_host, remote_port)
-        client_socket_info = local_writer.get_extra_info('socket')
+        client_socket_info = local_writer.get_extra_info('peername')
         print(f'[INFO] Client connected. {client_socket_info}')
 
         tasks = [
